@@ -1,0 +1,3 @@
+build/
+/src/OrthographicCamera.h
+/src/OrthographicCamera.cpp

@@ -1,0 +1,1265 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+#extension GL_EXT_debug_printf : enable
+
+#define EPSILON 1e-3f
+#define MAX_FLOAT 1000000.f
+#define BOX_HALF_SIZE vec3(0.5f)
+#define M_PI 3.1415926538
+
+#define MAX_DEPTH 5
+#define DISTRIBUTE_MAX 1
+#define IOR 1.4f
+#define P_E 256.0f
+#define K_D 1.0f
+#define K_S 0.5f
+
+//Using this really cool noise function I found on ShaderToy for creating random numbers
+
+// Gold Noise ©2015 dcerisano@standard3d.com
+// - based on the Golden Ratio
+// - uniform normalized distribution
+// - fastest static noise generator function (also runs at low precision)
+
+float called = 0.0f;
+
+float PHI = 1.61803398874989484820459;  // Φ = Golden Ratio   
+float gold_noise(in vec2 xy, in float seed){
+    called += 1.0f;
+       return fract(tan(distance(xy*PHI, xy)*(seed + called))*xy.x);
+}
+
+struct Box {
+	vec3 position;
+    int type;
+};
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+struct Intersection {
+    bool hit;
+	vec3 point;
+	Ray rayIn;
+	float t;
+    int intersectedObjectId;
+};
+
+struct PointLight {
+    vec3 position;
+    vec3 intensity;
+};
+
+vec3 diffuseColor[30] = {
+    vec3(0.18f, 0.18f, 0.18f), //AIR = 0,
+    vec3(0.35f, 0.41f, 0.85f), //WATER = 1,
+    vec3(0.18f, 0.18f, 0.18f), //GLAS = 2,
+    vec3(0.18f, 0.18f, 0.18f), //BEDROCK = 3,
+    vec3(0.47f, 0.33f, 0.22f), //DIRT = 4,
+    vec3(0.31f, 0.43f, 0.16f), //GRASS_BLOCK = 5,
+    vec3(0.31f, 0.43f, 0.16f), //GRASS_BLOCK_TOP = 6,
+	vec3(0.18f, 0.18f, 0.18f), //STONE = 7,
+    vec3(1.0f, 1.0f, 1.0f),    //SNOW = 8,
+    vec3(0.83f, 0.76f, 0.58f), //SAND = 9,
+	vec3(0.18f, 0.18f, 0.18f), //COBBLESTONE = 10,
+    vec3(0.47f, 0.71f, 0.37f), //ACACIA_LEAVES = 11,
+    vec3(0.18f, 0.18f, 0.18f), //ACACIA_LOG = 12,
+    vec3(0.18f, 0.18f, 0.18f), //ACACIA_LOG_TOP = 13,
+    vec3(0.47f, 0.71f, 0.37f), //BIRCH_LEAVES = 14,
+    vec3(0.18f, 0.08f, 0.03f), //BIRCH_LOG = 15,
+    vec3(0.18f, 0.08f, 0.03f), //BIRCH_LOG_TOP = 16,
+    vec3(0.38f, 0.57f, 0.30f), //CACTUS = 17,
+    vec3(0.38f, 0.57f, 0.30f), //CACTUS_TOP = 18,
+    vec3(0.47f, 0.71f, 0.37f), //DARK_OAK_LEAVES = 19,
+    vec3(0.18f, 0.08f, 0.03f), //DARK_OAK_LOG = 20,
+    vec3(0.18f, 0.08f, 0.03f), //DARK_OAK_LOG_TOP = 21,
+    vec3(0.47f, 0.71f, 0.37f), //OAK_LEAVES = 22,
+    vec3(0.18f, 0.08f, 0.03f), //OAK_LOG = 23,
+    vec3(0.18f, 0.08f, 0.03f), //OAK_LOG_TOP = 24,
+    vec3(0.47f, 0.71f, 0.37f), //SPRUCE_LEAVES = 25,
+    vec3(0.18f, 0.08f, 0.03f), //SPRUCE_LOG = 26,
+    vec3(0.18f, 0.08f, 0.03f), //SPRUCE_LOG_TOP = 27,
+    vec3(0.12f, 0.27f, 0.08f), //DARKGRASS_BLOCK = 28,
+    vec3(0.12f, 0.27f, 0.08f)  //DARKGRASS_BLOCK_TOP = 29,
+};
+
+int materialType[30] = {
+    0, //AIR = 0,
+    1, //WATER = 1,
+    1, //GLAS = 2,
+    2, //BEDROCK = 3,
+    2, //DIRT = 4,
+    2, //GRASS_BLOCK = 5,
+    2, //GRASS_BLOCK_TOP = 6,
+	2, //STONE = 7,
+    2, //SNOW = 8,
+    2, //SAND = 9,
+	2, //COBBLESTONE = 10,
+    2, //ACACIA_LEAVES = 11,
+    2, //ACACIA_LOG = 12,
+    2, //ACACIA_LOG_TOP = 13,
+    2, //BIRCH_LEAVES = 14,
+    2, //BIRCH_LOG = 15,
+    2, //BIRCH_LOG_TOP = 16,
+    2, //CACTUS = 17,
+    2, //CACTUS_TOP = 18,
+    2, //DARK_OAK_LEAVES = 19,
+    2, //DARK_OAK_LOG = 20,
+    2, //DARK_OAK_LOG_TOP = 21,
+    2, //OAK_LEAVES = 22,
+    2, //OAK_LOG = 23,
+    2, //OAK_LOG_TOP = 24,
+    2, //SPRUCE_LEAVES = 25,
+    2, //SPRUCE_LOG = 26,
+    2, //SPRUCE_LOG_TOP = 27,
+    2, //DARKGRASS_BLOCK = 28,
+    2  //DARKGRASS_BLOCK_TOP = 29,
+};
+
+vec3 emission[30] = {
+    vec3(0), //AIR = 0,
+    vec3(0), //WATER = 1,
+    vec3(0), //GLAS = 2,
+    vec3(0), //BEDROCK = 3,
+    vec3(0), //DIRT = 4,
+    vec3(0), //GRASS_BLOCK = 5,
+    vec3(0), //GRASS_BLOCK_TOP = 6,
+	vec3(0), //STONE = 7,
+    vec3(0), //SNOW = 8,
+    vec3(0), //SAND = 9,
+	vec3(0), //COBBLESTONE = 10,
+    vec3(0), //ACACIA_LEAVES = 11,
+    vec3(10.0f, 10.0f, 10.0f), //ACACIA_LOG = 12,
+    vec3(10.0f, 10.0f, 10.0f), //ACACIA_LOG_TOP = 13,
+    vec3(0), //BIRCH_LEAVES = 14,
+    vec3(10.0f, 10.0f, 10.0f), //BIRCH_LOG = 15,
+    vec3(10.0f, 10.0f, 10.0f), //BIRCH_LOG_TOP = 16,
+    vec3(10.0f, 10.0f, 10.0f), //CACTUS = 17,
+    vec3(10.0f, 10.0f, 10.0f), //CACTUS_TOP = 18,
+    vec3(0), //DARK_OAK_LEAVES = 19,
+    vec3(10.0f, 10.0f, 10.0f), //DARK_OAK_LOG = 20,
+    vec3(10.0f, 10.0f, 10.0f), //DARK_OAK_LOG_TOP = 21,
+    vec3(0), //OAK_LEAVES = 22,
+    vec3(10.0f, 10.0f, 10.0f), //OAK_LOG = 23,
+    vec3(10.0f, 10.0f, 10.0f), //OAK_LOG_TOP = 24,
+    vec3(0), //SPRUCE_LEAVES = 25,
+    vec3(10.0f, 10.0f, 10.0f), //SPRUCE_LOG = 26,
+    vec3(10.0f, 10.0f, 10.0f), //SPRUCE_LOG_TOP = 27,
+    vec3(0), //DARKGRASS_BLOCK = 28,
+    vec3(0)  //DARKGRASS_BLOCK_TOP = 29,
+};
+
+uint raysGenerated = 0;
+
+layout (local_size_x = 32, local_size_y = 32) in;
+layout (binding = 0) uniform CameraData {
+    vec4 position;
+	vec4 direction;
+	vec4 up;
+	vec4 sensorDimensions;
+    vec4 data;
+    ivec4 iData;
+} cd;
+layout (binding = 1, rgba8) uniform image2D image;
+layout (binding = 2) uniform sampler2D texSampler[32];
+layout (binding = 34) uniform sampler2D skyBoxSampler[12];
+layout (std430, binding = 46) buffer BoxBuffer {
+    Box boxes[ ];
+};
+layout (std430, binding = 47) buffer EmissiveBoxBuffer {
+    Box emissiveBoxes[ ];
+};
+layout (std430, binding = 48) buffer PointLightBuffer {
+    PointLight pointLights[ ];
+};
+layout (std430, binding = 49) buffer WriteBackData {
+    uvec4 data;
+} wbd;
+
+vec3 getBoxNormal(vec3 point, int boxID) {
+    vec3 localPoint = point - boxes[boxID].position;
+    vec3 stretchedPoint = localPoint / BOX_HALF_SIZE;
+
+    vec3 normal;
+    normal.x = 1.0f - abs(stretchedPoint.x) < EPSILON ? stretchedPoint.x : 0.0f;
+    normal.y = 1.0f - abs(stretchedPoint.y) < EPSILON ? stretchedPoint.y : 0.0f;
+    normal.z = 1.0f - abs(stretchedPoint.z) < EPSILON ? stretchedPoint.z : 0.0f;
+
+    return normalize(normal);
+}
+
+vec3 getEmissiveBoxNormal(vec3 point, int boxID) {
+    vec3 localPoint = point - emissiveBoxes[boxID].position;
+    vec3 stretchedPoint = localPoint / BOX_HALF_SIZE;
+
+    vec3 normal;
+    normal.x = 1.0f - abs(stretchedPoint.x) < EPSILON ? stretchedPoint.x : 0.0f;
+    normal.y = 1.0f - abs(stretchedPoint.y) < EPSILON ? stretchedPoint.y : 0.0f;
+    normal.z = 1.0f - abs(stretchedPoint.z) < EPSILON ? stretchedPoint.z : 0.0f;
+
+    return normalize(normal);
+}
+
+vec2 getBoxUV(vec3 point, int boxID) {
+    vec3 localPoint = point - boxes[boxID].position;
+    vec3 stretchedPoint = localPoint / BOX_HALF_SIZE;
+
+    vec2 uvCoordinates = vec2(0.0f);
+    if (1.0f - abs(stretchedPoint.x) < EPSILON) {
+        if (stretchedPoint.x < 0.0f) {
+            return vec2(localPoint.z + 0.5f, 1.0f - (localPoint.y + 0.5f));
+        } else {
+            return vec2(1.0f - (localPoint.z + 0.5f), 1.0f - (localPoint.y + 0.5f));
+        }
+    }
+    if (1.0f - abs(stretchedPoint.y) < EPSILON) {
+        if (stretchedPoint.y < 0.0f) {
+            return vec2(1.0f - (localPoint.z + 0.5f), 1.0f - (localPoint.x + 0.5f));
+        } else {
+            return vec2(localPoint.x + 0.5f, localPoint.z + 0.5f);
+        }
+    }
+    if (1.0f - abs(stretchedPoint.z) < EPSILON) {
+        if (stretchedPoint.z < 0.0f) {
+            return vec2(1.0f - (localPoint.x + 0.5f), 1.0f - (localPoint.y + 0.5f));
+        } else {
+            return vec2(localPoint.x + 0.5f, 1.0f - (localPoint.y + 0.5f));
+        }
+    }
+
+    return uvCoordinates;
+}
+
+vec2 getEmissiveBoxUV(vec3 point, int boxID) {
+    vec3 localPoint = point - emissiveBoxes[boxID].position;
+    vec3 stretchedPoint = localPoint / BOX_HALF_SIZE;
+
+    vec2 uvCoordinates = vec2(0.0f);
+    if (1.0f - abs(stretchedPoint.x) < EPSILON) {
+        if (stretchedPoint.x < 0.0f) {
+            return vec2(localPoint.z + 0.5f, 1.0f - (localPoint.y + 0.5f));
+        } else {
+            return vec2(1.0f - (localPoint.z + 0.5f), 1.0f - (localPoint.y + 0.5f));
+        }
+    }
+    if (1.0f - abs(stretchedPoint.y) < EPSILON) {
+        if (stretchedPoint.y < 0.0f) {
+            return vec2(1.0f - (localPoint.z + 0.5f), 1.0f - (localPoint.x + 0.5f));
+        } else {
+            return vec2(localPoint.x + 0.5f, localPoint.z + 0.5f);
+        }
+    }
+    if (1.0f - abs(stretchedPoint.z) < EPSILON) {
+        if (stretchedPoint.z < 0.0f) {
+            return vec2(1.0f - (localPoint.x + 0.5f), 1.0f - (localPoint.y + 0.5f));
+        } else {
+            return vec2(localPoint.x + 0.5f, 1.0f - (localPoint.y + 0.5f));
+        }
+    }
+
+    return uvCoordinates;
+}
+
+vec2 getSkyBoxUV(vec3 point, inout int side) {
+    if (1.0f - abs(point.y) < EPSILON) {
+        if (point.y < 0.0f) {
+            side = 1;
+            return vec2((point.x + 1.0f) / 2.0f, 1.0f - (point.z + 1.0f) / 2.0f);
+        } else {
+            side = 0;
+            return vec2((point.x + 1.0f) / 2.0f , (point.z + 1.0f) / 2.0f);
+        }
+    }
+    if (1.0f - abs(point.x) < EPSILON) {
+        if (point.x < 0.0f) {
+            side = 2;
+            return vec2((point.z + 1.0f) / 2.0f, 1.0f - (point.y  + 1.0f) / 2.0f);
+        } else {
+            side = 3;
+            return vec2(1.0f - (point.z + 1.0f) / 2.0f, 1.0f - (point.y + 1.0f) / 2.0f);
+        }
+    }
+    if (1.0f - abs(point.z) < EPSILON) {
+        if (point.z < 0.0f) {
+            side = 5;
+            return vec2(1.0f - (point.x + 1.0f) / 2.0f, 1.0f - (point.y + 1.0f) / 2.0f);
+        } else {
+            side = 4;
+            return vec2((point.x + 1.0f) / 2.0f, 1.0f - (point.y + 1.0f) / 2.0f);
+        }
+    }
+}
+
+Ray generateRay(vec3 origin, vec3 direction) {
+    raysGenerated++;
+
+    Ray ray;
+    ray.direction = normalize(direction);
+    ray.origin = origin + ray.direction * EPSILON;
+
+    return ray;
+}
+
+void calculateLocalCoordinateSystem(vec3 upVector, inout vec3 localX, inout vec3 localZ) {
+    vec3 vec = vec3(0.0f, 1.0f, 0.0f);
+
+	if (1.0f - abs(dot(vec, upVector)) < EPSILON) {
+		vec = vec3(1.0f, 0.0f, 0.0f);
+	}
+
+	localX = normalize(cross(upVector, vec));
+	localZ = normalize(cross(upVector, localX));
+}
+
+vec3 uniformHemisphereSample() {
+    float r1 = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w);
+    float r2 = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w);
+
+    float sinTheta = sqrt(1.0f - r1 * r1);
+	float phi = 2.0f * M_PI * r2;
+
+	float x = sinTheta * cos(phi);
+	float y = r1;
+	float z = sinTheta * sin(phi);
+
+	return vec3(x, y, z);
+}
+
+vec3 uniformBoxSample() {
+    int side = int(gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) * 6);
+    int axis = side % 3;
+
+    vec3 point = vec3(0.0f);
+
+    point[axis] = side > 2 ? 0.5f : -0.5f;
+    point[(axis + 1) % 3] = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) - 0.5f;
+    point[(axis + 2) % 3] = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) - 0.5f;
+
+    return point;
+}
+
+vec3 getLightIntensityAtPoint(vec3 point, vec3 pointOnLightSource, vec3 emission) {
+	float radius = (pointOnLightSource - point).length();
+	float radiusSquare = radius * radius;
+	return (emission / (4.f * M_PI * radiusSquare));
+}
+
+bool lightSourcesAvailable() {
+    if (emissiveBoxes.length() + pointLights.length() > 0) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+bool pointLightSourceAvailabe() {
+    return pointLights.length() > 0;
+}
+
+void lightSourceIDSample(inout int lightSourceID, inout int lightSourceType) {
+    float r = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w);
+    int lightSourceCount = emissiveBoxes.length() + pointLights.length();
+
+    int idUncapped = int(r * lightSourceCount);
+
+    if (idUncapped < emissiveBoxes.length()) {
+        lightSourceType = 0;
+        lightSourceID = idUncapped;
+    } else {
+        lightSourceType = 1;
+        lightSourceID = idUncapped - emissiveBoxes.length();
+    }
+}
+
+void pointLightSourceIDSample(inout int pointLightSourceID) {
+    float r = gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w);
+
+    pointLightSourceID = int(r * pointLights.length());
+}
+
+float getLightSourcePdf() {
+    int lightSourceCount = emissiveBoxes.length() + pointLights.length();
+    return 1.0f / lightSourceCount;
+}
+
+float getEmissiveBoxPdf() {
+    return 1.0f / 6.0f; // Area of each side is 1*1=1, 6 sides so total area is 6
+}
+
+float getPointLightPdf() {
+    return 1.0f;
+}
+
+vec3 rotateVectorInCoordinateSystem(vec3 vector, vec3 x, vec3 y, vec3 z) {
+    return vec3(vector.x * z.x + vector.y * y.x + vector.z * x.x,
+		vector.x * z.y + vector.y * y.y + vector.z * x.y,
+		vector.x * z.z + vector.y * y.z + vector.z * x.z);
+}
+
+Ray timsGetCameraRay(vec2 uvCoordinates) {
+    vec3 w = cd.direction.xyz;
+    vec3 u = normalize(cross(w, cd.up.xyz));
+    vec3 v = normalize(cross(w, u));
+
+    ivec2 imageDimension = imageSize(image);
+    float frameBufferAspectRatio = float(imageDimension.x) / float(imageDimension.y);
+	float sensorAspectRatio = cd.sensorDimensions.x / cd.sensorDimensions.y;
+
+    float transformedWidth = cd.sensorDimensions.x / 2.0f;
+	float transformedHeight = cd.sensorDimensions.y / 2.0f;
+
+	float horizontalScale = 1.0f;
+	float verticalScale = 1.0f;
+
+	if (sensorAspectRatio > frameBufferAspectRatio) {
+		horizontalScale = frameBufferAspectRatio / sensorAspectRatio;
+	}
+	else {
+		verticalScale = sensorAspectRatio / frameBufferAspectRatio;
+	}
+
+    transformedWidth *= horizontalScale * cd.iData.z;
+	transformedHeight *= verticalScale * cd.iData.z;
+
+    vec3 width = 2.0f * transformedWidth * u;
+	vec3 height = 2.0f * transformedHeight * v;
+
+    vec3 lowerLeftCorner = cd.position.xyz - u * transformedWidth - v * transformedHeight + w * cd.sensorDimensions.z;
+    return generateRay(cd.position.xyz, (lowerLeftCorner + (uvCoordinates.x * width) + (uvCoordinates.y * height)) - cd.position.xyz);
+}
+
+Intersection getEmptyIntersection() {
+    Intersection intersection;
+    intersection.hit = false;
+    intersection.point = vec3(0.0f);
+    intersection.rayIn = generateRay(vec3(0.0f), vec3(0.0f));
+    intersection.t = MAX_FLOAT;
+    intersection.intersectedObjectId = -1;
+
+    return intersection;
+}
+
+Intersection rayAABBTest(Ray ray, int boxID) {
+    Intersection intersection = getEmptyIntersection();
+
+    vec3 boxOrigin = boxes[boxID].position;
+    vec3 minB = boxOrigin - BOX_HALF_SIZE;
+    vec3 maxB = boxOrigin + BOX_HALF_SIZE;
+
+    vec3 directionInverse = vec3(1.0f) / ray.direction;
+
+    vec3 tMinVec = (minB - ray.origin) * directionInverse;
+    vec3 tMaxVec = (maxB - ray.origin) * directionInverse;
+
+    float tmin = max(max(min(tMinVec.x, tMaxVec.x), min(tMinVec.y, tMaxVec.y)), min(tMinVec.z, tMaxVec.z));
+    float tmax = min(min(max(tMinVec.x, tMaxVec.x), max(tMinVec.y, tMaxVec.y)), max(tMinVec.z, tMaxVec.z));
+
+    if (tmax < 0) {
+		return intersection;
+	}
+
+	if (tmin > tmax) {
+		return intersection;
+	}
+
+    intersection.hit = true;
+	intersection.t = tmin;
+	if (intersection.t < 0) intersection.t *= -1.0f;
+    intersection.point = ray.origin + ray.direction * intersection.t;
+    intersection.rayIn = ray;
+    intersection.intersectedObjectId = boxID;
+
+    return intersection;
+}
+
+Intersection raySkyBoxTest(Ray ray) {
+    Intersection intersection = getEmptyIntersection();
+
+    vec3 minB = vec3(-1.0f);
+    vec3 maxB = vec3(1.0f);
+
+    vec3 directionInverse = vec3(1.0f) / ray.direction;
+
+    vec3 tMinVec = (minB) * directionInverse;
+    vec3 tMaxVec = (maxB) * directionInverse;
+
+    float tmin = max(max(min(tMinVec.x, tMaxVec.x), min(tMinVec.y, tMaxVec.y)), min(tMinVec.z, tMaxVec.z));
+    float tmax = min(min(max(tMinVec.x, tMaxVec.x), max(tMinVec.y, tMaxVec.y)), max(tMinVec.z, tMaxVec.z));
+
+    if (tmax < 0) {
+		return intersection;
+	}
+
+	if (tmin > tmax) {
+		return intersection;
+	}
+
+    intersection.hit = false;
+	intersection.t = tmin;
+	if (intersection.t < 0) intersection.t *= -1.0f;
+    intersection.point = ray.direction * intersection.t;
+    intersection.rayIn = ray;
+    intersection.intersectedObjectId = -1;
+
+    return intersection;
+} 
+
+vec4 sampleTexture(vec3 point, int boxID, int type) {
+    if (type == 5 || type == 12 || type == 15 || type == 17 || type == 20 || type == 23 || type == 26 || type == 28) {
+        if (1.0f - getBoxNormal(point, boxID).y < EPSILON) {
+            type += 1;
+        }
+	}
+
+    return texture(texSampler[type], getBoxUV(point, boxID));
+}
+
+vec4 sampleEmissiveTexture(vec3 point, int boxID, int type) {
+    if (type == 5 || type == 12 || type == 15 || type == 17 || type == 20 || type == 23 || type == 26 || type == 28) {
+        if (1.0f - getEmissiveBoxNormal(point, boxID).y < EPSILON) {
+            type += 1;
+        }
+	}
+
+    return texture(texSampler[type], getEmissiveBoxUV(point, boxID));
+}
+
+int getMaterialType(Intersection intersection) {
+    if (intersection.intersectedObjectId == -1) {
+        return 0;
+    }
+
+    return materialType[boxes[intersection.intersectedObjectId].type];
+}
+
+float getMaterialPdf(int materialType) {
+    switch (materialType) {
+        case 0: 
+        return 1.0f;
+        case 1:
+        return 1.0f;
+        case 2:
+        return 1.0f / (2.0f * M_PI);
+    }
+}
+
+Intersection intersectWithBoxes(Ray ray) {
+    Intersection closest = getEmptyIntersection();
+
+    for (int i = 0; i < boxes.length(); i++) {
+        Intersection intersection = rayAABBTest(ray, i);
+
+        if (intersection.hit && intersection.t < closest.t) {
+            if (1.0f - sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).w < EPSILON || boxes[intersection.intersectedObjectId].type == 1 || boxes[intersection.intersectedObjectId].type == 2) {
+                closest = intersection;
+            }
+        }
+    }
+
+    return closest;
+}
+
+Intersection intersectWithScene(Ray ray) {
+    Intersection closest = getEmptyIntersection();
+
+    Intersection boxIntersection = intersectWithBoxes(ray);
+    Intersection skyBoxIntersection = raySkyBoxTest(ray);
+
+    if (boxIntersection.hit) {
+        return boxIntersection;
+    } else {
+        return skyBoxIntersection;
+    }
+}
+
+float schlick(float cosTheta, float ior) {
+	float r0 = ((1.0f - ior) / (1.0f + ior)) * ((1.0f - ior) / (1.0f + ior));
+	float oCTheta = 1.0f - cosTheta;
+	return r0 + (1.0f - r0) * oCTheta * oCTheta * oCTheta * oCTheta * oCTheta;
+}
+
+bool scatterSkyBox(Intersection intersection, inout vec3 attenuation, inout Ray rayOut) {
+    //attenuation = vec3(0.0f);
+    //attenuation = vec3(1.0f);
+
+    //attenuation = mix(vec3(1.0f), vec3(0.5f, 0.7f, 1.0f), intersection.rayIn.direction.y * 0.5f + 0.5f);
+
+    int side;
+    vec2 uvCoordinates = getSkyBoxUV(intersection.point, side);
+
+    attenuation = texture(skyBoxSampler[side], uvCoordinates).xyz;
+    
+    return false;
+}
+
+bool scatterRefractive(Intersection intersection, inout vec3 attenuation, inout Ray rayOut) {
+	vec3 directionIn = intersection.rayIn.direction;
+
+    vec3 normal = getBoxNormal(intersection.point, intersection.intersectedObjectId);
+	float eta = 1.0f / IOR;
+	float cosTheta = -dot(directionIn, normal);
+
+	vec3 directionOut = vec3(0.0f);
+
+	if (dot(directionIn, normal) > 0.0f) {
+		cosTheta = IOR * dot(directionIn, normal);
+		normal = -normal;
+		eta = IOR;
+	}
+
+	float reflectProbability = 1.0f;
+
+    directionOut = refract(directionIn, normal, eta);
+
+	if (directionOut != vec3(0.0f)) {
+		reflectProbability = schlick(cosTheta, IOR);
+	}
+
+	if (gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) < reflectProbability) {
+		directionOut = reflect(directionIn, normal);
+	}
+
+	rayOut = generateRay(intersection.point, directionOut);
+
+    attenuation = vec3(1.0f);
+
+    return true;
+}
+
+bool scatterLambertian(Intersection intersection, inout vec3 attenuation, inout Ray rayOut) {
+    attenuation = sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz / M_PI;
+
+	vec3 normal = getBoxNormal(intersection.point, intersection.intersectedObjectId);
+    vec3 normalX = vec3(0.0f);
+    vec3 normalZ = vec3(0.0f);
+
+    calculateLocalCoordinateSystem(normal, normalX, normalZ);
+
+    vec3 sampleDirection = uniformHemisphereSample();
+
+    vec3 directionOut = rotateVectorInCoordinateSystem(sampleDirection, normalX, normal, normalZ);
+
+    rayOut = generateRay(intersection.point, directionOut);
+
+	return true;
+}
+
+bool scatter(Intersection intersection, inout vec3 attenuation, inout Ray rayOut) {
+    int materialType = getMaterialType(intersection);
+
+    if (!intersection.hit) {
+        materialType = 0;
+    }
+
+    switch (materialType) {
+        case 0: 
+        return scatterSkyBox(intersection, attenuation, rayOut);
+        case 1:
+        return scatterRefractive(intersection, attenuation, rayOut);
+        case 2:
+        return scatterLambertian(intersection, attenuation, rayOut);
+    }
+}
+
+vec3 intersectionIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if (intersection.hit) {
+        color = vec3(1.0f);
+    }
+
+    return color;
+}
+
+vec3 normalIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if (intersection.hit) {
+        color = abs(getBoxNormal(intersection.point, intersection.intersectedObjectId));
+    }
+
+    return color;
+}
+
+vec3 diffuseColorIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if (intersection.hit) {
+        color = diffuseColor[boxes[intersection.intersectedObjectId].type];
+    }
+
+    return color;
+}
+
+vec3 uvIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if (intersection.hit) {
+        color = vec3(getBoxUV(intersection.point, intersection.intersectedObjectId), 0.0f);
+    }
+
+    return color;
+}
+
+vec3 textureIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if(intersection.hit) {
+        color = sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz;
+    }
+
+    return color;
+}
+
+vec3 ambientOcclusionIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Intersection intersection = intersectWithBoxes(ray);
+
+    if (intersection.hit) {
+
+       vec3 normal = getBoxNormal(intersection.point, intersection.intersectedObjectId);
+       vec3 normalX = vec3(0.0f);
+       vec3 normalZ = vec3(0.0f);
+
+       calculateLocalCoordinateSystem(normal, normalX, normalZ);
+
+        vec3 sampleDirection = uniformHemisphereSample();
+
+        vec3 directionOut = rotateVectorInCoordinateSystem(sampleDirection, normalX, normal, normalZ);
+
+        Ray rayOut = generateRay(intersection.point, directionOut);
+        Intersection newIntersection = intersectWithBoxes(rayOut);
+
+        if (!newIntersection.hit) {
+            color += vec3(max(dot(directionOut, normal), 0.0f)) * 2.0f;
+        }
+    }
+
+    return color;
+}
+
+vec3 whittedIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Ray rayIn = ray;
+    Ray rayOut;
+
+    int depth = 0;
+
+    Intersection intersection = getEmptyIntersection();
+
+    vec3 attenuation = vec3(1.0f);
+
+    while (depth < MAX_DEPTH) {
+        intersection = intersectWithScene(rayIn);
+        int materialType = getMaterialType(intersection);
+
+        if (intersection.hit) {
+            int pointLightID;
+            pointLightSourceIDSample(pointLightID);
+
+            vec3 lightDirection = normalize(pointLights[pointLightID].position - intersection.point);
+
+            Ray shadowRay = generateRay(intersection.point, lightDirection);
+            Intersection shadowIntersection = intersectWithScene(shadowRay);
+
+            if (!shadowIntersection.hit) {
+                color = vec3(0.0f);
+
+                if (materialType != 1) {
+                    //Diffuse
+                    float diffuse = max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), lightDirection), 0.0f);
+                    vec3 diffusePart = sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz * diffuse * getLightIntensityAtPoint(intersection.point, pointLights[0].position, pointLights[0].intensity) / M_PI;
+
+                    //Specular
+                    vec3 reflectDirection = reflect(lightDirection, getBoxNormal(intersection.point, intersection.intersectedObjectId));
+                    float specular = pow(max(dot(ray.direction, reflectDirection), 0.0), P_E);
+			        vec3 specularPart = getLightIntensityAtPoint(intersection.point, pointLights[0].position, pointLights[0].intensity) * specular;
+
+                    color += diffusePart * K_D + specularPart * K_S;
+                    color *= attenuation;
+                    color /= (1.0f / pointLights.length()) * getPointLightPdf();
+
+                    break;
+                } else {
+                    scatter(intersection, attenuation, rayOut);
+                    rayIn = rayOut;
+                }
+            }
+        }
+        else {
+            scatterSkyBox(intersection, attenuation, rayOut);
+            color += attenuation;
+            break;
+        }
+
+        depth++;
+    }
+
+    return color;
+}
+
+vec3 distributedIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    Ray rayIn = ray;
+    Ray rayOut;
+
+    int depth = 0;
+
+    Intersection intersection = getEmptyIntersection();
+
+    vec3 attenuation = vec3(1.0f);
+
+    while (depth < MAX_DEPTH) {
+        intersection = intersectWithScene(rayIn);
+        int materialType = getMaterialType(intersection);
+
+        if (intersection.hit) {
+            if (length(emission[boxes[intersection.intersectedObjectId].type]) > 0.0f) {
+                color = emission[boxes[intersection.intersectedObjectId].type] * sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz;
+                return color;
+            }
+
+            for (int i = 0; i < DISTRIBUTE_MAX; i++) {
+                vec3 colorLocal = vec3(0.0f);
+
+                if (lightSourcesAvailable()) {
+                    int lightSourceID;
+                    int lightSourceType;
+                    lightSourceIDSample(lightSourceID, lightSourceType);
+
+                    vec3 positionOnLightSource;
+
+                    if (lightSourceType == 0) { //Box (Area)
+                        positionOnLightSource = emissiveBoxes[lightSourceID].position + uniformBoxSample();
+                    }
+                    else { //Point Light
+                        positionOnLightSource = pointLights[lightSourceID].position;
+                    }
+
+                    vec3 shadowRayDirection = positionOnLightSource - intersection.point;
+
+                    Ray shadowRay = generateRay(intersection.point, shadowRayDirection);
+                    Intersection shadowIntersection = intersectWithBoxes(shadowRay);
+
+                    vec3 emissionReached;
+
+                    if (lightSourceType == 0) { //Box (Area)
+                        vec3 emission = emission[emissiveBoxes[lightSourceID].type] * sampleTexture(shadowIntersection.point, shadowIntersection.intersectedObjectId, emissiveBoxes[lightSourceID].type).xyz;
+                        emissionReached = getLightIntensityAtPoint(intersection.point, positionOnLightSource, emission);
+                        float g = max(dot(getBoxNormal(shadowIntersection.point, shadowIntersection.intersectedObjectId), -shadowRay.direction), 0.0f);
+                        emissionReached *= g;
+                        emissionReached /= getLightSourcePdf() * getEmissiveBoxPdf();
+                    }
+                    else { //Point Light
+                        emissionReached = getLightIntensityAtPoint(intersection.point, pointLights[lightSourceID].position, pointLights[lightSourceID].intensity);
+                    }
+
+                    vec3 lightDirection = normalize(shadowRayDirection);
+
+                    if ((!shadowIntersection.hit) || (lightSourceType == 0 && length(positionOnLightSource - shadowIntersection.point) < 2.0f * EPSILON)) {
+                        if (materialType != 1) {
+                            //Diffuse
+                            float diffuse = max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), lightDirection), 0.0f);
+                            vec3 diffusePart = sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz * diffuse * emissionReached / M_PI;
+
+                            //Specular
+                            vec3 reflectDirection = reflect(lightDirection, getBoxNormal(intersection.point, intersection.intersectedObjectId));
+                            float specular = pow(max(dot(ray.direction, reflectDirection), 0.0), P_E);
+		    	            vec3 specularPart = emissionReached * specular;
+
+                            colorLocal += diffusePart * K_D + specularPart * K_S;
+                        } else {
+                            scatter(intersection, attenuation, rayOut);
+                            rayIn = rayOut;
+                        }
+                    } else {
+                        colorLocal = vec3(0.0f);
+                    }
+                }
+
+                color += colorLocal * attenuation;
+            }
+
+            color /= DISTRIBUTE_MAX;
+
+        }
+        else {
+            scatterSkyBox(intersection, attenuation, rayOut);
+            color += attenuation;
+            break;
+        }
+
+        depth++;
+    }
+
+    return color;
+}
+
+vec3 timsPathTraceIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    vec3 li = vec3(1.0f);
+
+	Ray rayIn = ray;
+	Ray rayOut;
+
+	float alpha = 0.995f;
+	int i = 0;
+
+	while (true) {
+        if (i > 10) {
+            break;
+        }
+
+		if (gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) > alpha && i > 3) {
+    		break;
+		}
+		++i;
+
+        Intersection intersection = intersectWithScene(rayIn);
+        int materialType = getMaterialType(intersection);
+
+		bool scattered = false;
+		vec3 attenuation = vec3(0.0f);
+        scattered = scatter(intersection, attenuation, rayOut);
+
+		if (intersection.hit) {
+            float cos = 1.0f;
+
+            if (materialType != 1) {
+                cos = max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), rayOut.direction), 0.0f);
+            }
+
+            li *= attenuation * cos / getMaterialPdf(materialType) / alpha;
+
+            if (length(emission[boxes[intersection.intersectedObjectId].type]) > 0.0f) {
+                li *= emission[boxes[intersection.intersectedObjectId].type];
+                color += li;
+            }
+		}
+		else {
+            color += li * attenuation / alpha;
+
+			break;
+		}
+
+		if (!scattered) {
+			break;
+		}
+
+		rayIn = rayOut;
+	}
+
+	return color;
+}
+
+vec3 pathTraceNEEIntegrator(Ray ray) {
+    vec3 color = vec3(0.0f);
+
+    vec3 li = vec3(1.0f);
+
+	Ray rayIn = ray;
+	Ray rayOut;
+    int lastMaterial = -1;
+
+	float alpha = 0.995f;
+	int i = 0;
+
+	while (true) {
+        if (i > 10) {
+            break;
+        }
+
+		if (gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) > alpha && i > 3) {
+    		break;
+		}
+		++i;
+
+        Intersection intersection = intersectWithScene(rayIn);
+        int materialType = getMaterialType(intersection);
+
+		bool scattered = false;
+		vec3 attenuation = vec3(0.0f);
+        scattered = scatter(intersection, attenuation, rayOut);
+
+		if (intersection.hit) {
+            //Direct Lighting
+
+            if (lightSourcesAvailable() && materialType != 1) {
+                int lightSourceID;
+                int lightSourceType;
+                lightSourceIDSample(lightSourceID, lightSourceType);
+
+                vec3 positionOnLightSource;
+
+                if (lightSourceType == 0) { //Box (Area)
+                    positionOnLightSource = emissiveBoxes[lightSourceID].position + uniformBoxSample();
+                }
+                else { //Point Light
+                    positionOnLightSource = pointLights[lightSourceID].position;
+                }
+
+                vec3 shadowRayDirection = positionOnLightSource - intersection.point;
+
+                Ray shadowRay = generateRay(intersection.point, shadowRayDirection);
+                Intersection shadowIntersection = intersectWithScene(shadowRay);
+
+                if (lightSourceType == 0 && shadowIntersection.hit && length(positionOnLightSource - shadowIntersection.point) < 2.0f * EPSILON) {
+                    vec3 emissionReached = emission[emissiveBoxes[lightSourceID].type] * sampleTexture(shadowIntersection.point, shadowIntersection.intersectedObjectId, emissiveBoxes[lightSourceID].type).xyz;
+                    float g = (max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), shadowRay.direction), 0.0f) * max(dot(getBoxNormal(shadowIntersection.point, shadowIntersection.intersectedObjectId), -shadowRay.direction), 0.0f))
+                                / (shadowIntersection.t * shadowIntersection.t);
+                    vec3 attenuationAtPoint = li * sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz / M_PI;
+                    color += attenuationAtPoint * emissionReached * g / (getLightSourcePdf() * getEmissiveBoxPdf());
+                }
+
+                if (lightSourceType == 1 && !shadowIntersection.hit) {
+                    vec3 emissionReached = getLightIntensityAtPoint(intersection.point, pointLights[lightSourceID].position, pointLights[lightSourceID].intensity);
+                    float g = max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), shadowRay.direction), 0.0f);
+                    vec3 attenuationAtPoint = li * sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz / M_PI;
+                    color += attenuationAtPoint * emissionReached * g / (getLightSourcePdf() * getPointLightPdf());
+                }
+            }
+
+
+            float cos = 1.0f;
+
+            if (materialType != 1) {
+                cos = max(dot(getBoxNormal(intersection.point, intersection.intersectedObjectId), rayOut.direction), 0.0f);
+            }
+
+            li *= attenuation * cos / getMaterialPdf(materialType) / alpha;
+
+            if ((lastMaterial == 1 || i == 1) && length(emission[boxes[intersection.intersectedObjectId].type]) > 0.0f) {
+                color += emission[boxes[intersection.intersectedObjectId].type] * sampleTexture(intersection.point, intersection.intersectedObjectId, boxes[intersection.intersectedObjectId].type).xyz;
+
+                break;
+            }
+
+            lastMaterial = materialType;
+		}
+		else {
+            color += li * attenuation / alpha;
+
+			break;
+		}
+
+		if (!scattered) {
+			break;
+		}
+
+		rayIn = rayOut;
+	}
+
+	return color;
+}
+
+vec3 bidirectionalPathTraceIntegrator(Ray ray) {
+    if (!lightSourcesAvailable()) {
+        return vec3(0.0f);
+    }
+
+    vec3 color = vec3(0.0f);
+
+    vec3 liCamera = vec3(1.0f);
+    vec3 liLight = vec3(1.0f);
+
+    Ray rayInCamera = ray;
+    Ray rayOutCamera;
+
+    Ray rayInLight;
+    Ray rayOutLight;
+
+    //Sample point on light source
+    int lightSourceID;
+    int lightSourceType;
+    lightSourceIDSample(lightSourceID, lightSourceType);
+
+    vec3 positionOnLightSource;
+    vec3 directionFromLightSource;
+    float lightSourcePdf;
+
+    if (lightSourceType == 0) { //Box (Area)
+        positionOnLightSource = emissiveBoxes[lightSourceID].position + uniformBoxSample();
+
+        vec3 normal = getEmissiveBoxNormal(positionOnLightSource, lightSourceID);
+        vec3 normalX = vec3(0.0f);
+        vec3 normalZ = vec3(0.0f);
+
+        calculateLocalCoordinateSystem(normal, normalX, normalZ);
+
+        vec3 sampleDirection = uniformHemisphereSample();
+
+        directionFromLightSource = rotateVectorInCoordinateSystem(sampleDirection, normalX, normal, normalZ);
+
+        liLight = emission[emissiveBoxes[lightSourceID].type] * sampleEmissiveTexture(positionOnLightSource, lightSourceID, emissiveBoxes[lightSourceID].type).xyz;
+
+        lightSourcePdf = getLightSourcePdf() * getEmissiveBoxPdf();
+    }       
+    else { //Point Light        
+        positionOnLightSource = pointLights[lightSourceID].position;        
+
+        directionFromLightSource = normalize(vec3((gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) - 0.5f) * 2.0f,
+                                                (gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) - 0.5f) * 2.0f,
+                                                (gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w) - 0.5f) * 2.0f));
+
+        liLight = pointLights[lightSourceID].intensity;
+
+        lightSourcePdf = getLightSourcePdf() * getPointLightPdf();
+    }
+
+    rayInLight = generateRay(positionOnLightSource, directionFromLightSource);
+
+    int i = 0;
+
+    while (true) {
+        if (i > 5) {
+            break;
+        }
+
+        ++i;
+
+        Intersection intersectionCamera = intersectWithScene(rayInCamera);
+        Intersection intersectionLight = intersectWithScene(rayInLight);
+
+        int materialTypeCamera = getMaterialType(intersectionCamera);
+        int materialTypeLight = getMaterialType(intersectionLight);
+
+        vec3 attenuationCamera = vec3(0.0f);
+        vec3 attenuationLight = vec3(0.0f);
+
+        bool scatteredCamera = scatter(intersectionCamera, attenuationCamera, rayOutCamera);
+        bool scatteredLight = scatter(intersectionLight, attenuationLight, rayOutLight);
+
+        if (intersectionCamera.hit && intersectionLight.hit) {
+            vec3 connectionDirection = intersectionLight.point - intersectionCamera.point;
+
+            Ray connectionRay = generateRay(intersectionCamera.point, connectionDirection);
+
+            Intersection connectionIntersection = intersectWithScene(connectionRay);
+
+            if (length(intersectionLight.point - connectionIntersection.point) < 2.0f * EPSILON) {
+                float cosThetaI = max(dot(getBoxNormal(intersectionCamera.point, intersectionCamera.intersectedObjectId), connectionRay.direction), 0.0f);
+                float cosThetaJ = max(dot(getBoxNormal(intersectionLight.point, intersectionLight.intersectedObjectId), -connectionRay.direction), 0.0f);
+                float rSquared = connectionIntersection.t * connectionIntersection.t;
+
+                color += (liCamera * attenuationCamera / getMaterialPdf(materialTypeCamera)) * (liLight * attenuationLight / getMaterialPdf(materialTypeLight)) * cosThetaI * cosThetaJ / rSquared / lightSourcePdf;
+                color /= 2 * i;
+            }
+        }
+
+        if (intersectionCamera.hit) {
+            float cos = 1.0f;
+
+            if (materialTypeCamera != 1) {
+                cos = max(dot(getBoxNormal(intersectionCamera.point, intersectionCamera.intersectedObjectId), rayOutCamera.direction), 0.0f);
+            }
+
+            liCamera *= attenuationCamera * cos / getMaterialPdf(materialTypeCamera);
+
+            if (length(emission[boxes[intersectionCamera.intersectedObjectId].type]) > 0.0f) {
+                liCamera += emission[boxes[intersectionCamera.intersectedObjectId].type] * sampleTexture(intersectionCamera.point, intersectionCamera.intersectedObjectId, boxes[intersectionCamera.intersectedObjectId].type).xyz;
+                color += liCamera;
+            }
+        }
+        else {
+            color += liCamera * attenuationCamera;
+            return color;
+        }
+
+        if (intersectionLight.hit) {
+            float cos = 1.0f;
+
+            if (materialTypeLight != 1) {
+                cos = max(dot(getBoxNormal(intersectionLight.point, intersectionLight.intersectedObjectId), rayOutLight.direction), 0.0f);
+            }
+
+            liLight *= attenuationLight * cos / getMaterialPdf(materialTypeLight);
+        }
+        else {
+            return color;
+        }
+
+        if (!scatteredCamera || !scatteredLight) {
+            break;
+        }
+
+        rayInCamera = rayOutCamera;
+        rayInLight = rayOutLight;
+    }
+
+
+    return color;
+}
+
+vec3 li(Ray ray) {
+    switch(cd.iData.x) {
+        case 0:
+        return intersectionIntegrator(ray);
+        case 1:
+        return normalIntegrator(ray);
+        case 2:
+        return diffuseColorIntegrator(ray);
+        case 3:
+        return uvIntegrator(ray);
+        case 4:
+        return textureIntegrator(ray);
+        case 5:
+        return ambientOcclusionIntegrator(ray);
+        case 6:
+        return whittedIntegrator(ray);
+        case 7:
+        return distributedIntegrator(ray);
+        case 8:
+        return timsPathTraceIntegrator(ray);
+        case 9:
+        return pathTraceNEEIntegrator(ray);
+        case 10:
+        return bidirectionalPathTraceIntegrator(ray);
+    }
+}
+
+Ray getCameraRay(vec2 uvCoordinates) {
+    switch (cd.iData.y) {
+        case 0:
+        return timsGetCameraRay(uvCoordinates);
+    }
+}
+
+void main() {
+    ivec2 imageDimension = imageSize(image);
+    vec2 uvCoordinates = (vec2(gl_GlobalInvocationID.xy) + gold_noise(gl_GlobalInvocationID.xy, cd.sensorDimensions.w)) / imageDimension;
+
+    Ray cameraRay = getCameraRay(uvCoordinates);
+
+    vec3 color = li(cameraRay);
+
+    if (cd.data.x > EPSILON) {
+        float oldWeight = (cd.data.x - 1.0f);
+        float newWeight = 1.0f / cd.data.x;
+
+        vec4 oldColor = imageLoad(image, ivec2(gl_GlobalInvocationID.xy)) * oldWeight;
+        color += oldColor.xyz;
+        color *= newWeight;
+    }
+
+    imageStore(image, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0f));
+
+    atomicAdd(wbd.data.x, raysGenerated);
+}

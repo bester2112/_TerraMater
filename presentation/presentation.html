@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Presentation</title>
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/sky.css" id="theme">
+
+		<!-- Code syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				
+				<section>
+					<h1>Terra Mater</h1>
+					<h3>SS 20</h3>
+					<p>Tim Lissek & Thomas Rzepka</p>
+				</section>
+
+				<section>					
+					<section>
+						<h2>Our journy from this...</h2>
+						<img data-src="pictures/firsttriangle.png">
+					</section>
+					<section>
+						<h2>To this...</h2>
+						<img data-src="pictures/finishedgame.png">
+					</section>
+				</section>
+				
+				<section>
+					<section>
+						<h1>Milestone 1</h1>				
+					</section>
+					
+					<section>
+						<h2>Vulkan Wrapper</h2>
+						<ul>
+							<li class="fragment">Hello Triangle:</li>
+							<ul>
+								<li class="fragment">OpenGl: 100 loc</li>
+								<li class="fragment">Vulkan: <t style="color:red">1000</t> loc</li>
+							</ul>
+							<li class="fragment">Vulkan is an lower level API:</li>
+							<ul>
+								<li class="fragment">Higher work up-front</li>
+								<li class="fragment">Leads to better control</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Vulkan Wrapper</h2>
+						<p>Therefore we needed some sort of Wrapper around the Vulkan API</p>
+						<img data-src="pictures/classdiagram.png">
+					</section>
+
+					<section>
+						<h2>Cube</h2>
+						<img data-src="pictures/cube.png">
+					</section>
+					<section>
+						<h2>Camera</h2>
+						<ul>
+							<li class="fragment">First flying camera</li>
+							<li class="fragment">attached to character</li>
+							<li class="fragment">change view with mouse / WASD</li>
+							<li class="fragment">field of view  with + / -</li>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Chunk Structure</h2>
+						Chunk size: 32 x 32 x 32  (Minecraft have 16 x 16 x 16)
+						<img data-src="pictures/psmoother.png">
+					</section>
+					
+					
+					<section>
+						<h2>Input handling</h2>
+						<ul>
+							<li>Using GLFW</li>
+							<li>handles keyboard and mouse input</li>
+						</ul>
+					</section>
+				<section>
+					<h2>Input handling</h2>
+					<img data-src="pictures/InputHandling1.png">
+				</section>
+				<section>
+					<h2>Input handling</h2>
+					<img data-src="pictures/InputHandling2.png">
+				</section>
+				</section>
+
+				<section>
+					<section>
+						<h1>Milestone 2</h1>				
+					</section>
+
+					<section>
+						<h2>Cube types</h2>
+						<img data-src="pictures/texture_old.png">
+						<ul>
+							<li>Texture used from Minecraft.jar</li>
+							<li>used new texture Format because of greedy meshing</li>
+						</ul>
+					</section>
+					<section>
+						<h2>Cube types</h2>
+						<ul>
+							<li>All cube in game</li>
+						</ul>
+						<img data-src="pictures/all_cubes.png">
+					</section> 
+					
+					<section data-transition="none">
+						<h2>World generation</h2>
+						<p>Using a 2D Perlin noise texture as the base</p>
+						<img data-src="pictures/psmoother.png">
+					</section>
+
+					<section data-transition="none">
+						<h2>World generation</h2>
+						<p>Generating moisture using multiple octaves</p>
+						<img data-src="pictures/moisture.png">
+					</section>
+
+					<section data-transition="none">
+						<h2>World generation</h2>
+						<p>And temperature using domain warping</p>
+						<img data-src="pictures/temperature.png">
+					</section>
+
+					<section data-transition="none">
+						<h2>World generation</h2>
+						<p>Blending them into the final height map</p>
+						<img data-src="pictures/height.png">
+					</section>
+
+					<section>
+						<h2>World generation</h2>
+						<ul>
+							<li class="fragment">After having the height map the chunks get filled:</li>
+							<ul>
+								<li class="fragment">One layer of bedrock at the bottom</li>
+								<li class="fragment">Lower 80 percent filled with stone</li>
+								<li class="fragment">Last 20 percent filled with blocks fitting to the biom</li>
+								<li class="fragment">Water is raised till the sea level</li>
+								<li class="fragment">Snow ontop of mountains</li>
+								<li class="fragment">Followed by trees, flowers and grass</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>World generation</h2>
+						<p>Generating trees using an L-System and rules like this:</p>
+						<pre><code data-trim>
+							TreeDescription const Settings::simpleOakTreeDescription = {
+	"A",
+	{{'A', "TtaB"},
+	{'a', "ta"},
+	{'B', "T[+LL&lt;L&lt;L&gt;L&gt;l][-LL&lt;L&lt;L&gt;L&gt;l][*LL&lt;L&lt;L&gt;L&gt;l][/LL&lt;L&lt;L&gt;L&gt;l]bC"},
+	{'b', "T[+LL&lt;L&lt;L&gt;L&gt;l][-LL&lt;L&lt;L&gt;L&gt;l][*LL&lt;L&lt;L&gt;L&gt;l][/LL&lt;L&lt;L&gt;L&gt;l]bc"},
+	{'C', "T[+L][-L][*L][/L]D"},
+	{'c', "T[+L][-L][*L][/L]"},
+	{'D', "L"}},
+	4, CubeType::OAK_LOG, CubeType::OAK_LEAVES, 0.5f, 0.5f, 0.5f
+};
+
+								</code></pre>
+					</section>
+
+					<section>
+						<h2>World generation</h2>
+						<p>Final result:</p>
+						<img data-src="pictures/generatedworldfinished.png">
+					</section>
+					
+					<section>
+						<h2>Shading</h2>
+						<ul>
+							<li class="fragment">Our shading model consists of four parts:</li>
+							<ul>
+								<li class="fragment">Texture sampling</li>
+								<li class="fragment">Diffuse shading</li>
+								<li class="fragment">Light level propagation</li>
+								<ul>
+									<li class="fragment">(as used in Minecraft)</li>
+								</ul>
+								<li class="fragment">Ambient occlusion</li>
+								<ul>
+									<li class="fragment">(calculated in world space)</li>
+								</ul>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Light level propagation</h2>
+						<p>Light gets propated through the world, starting from emitting cubes and the sky</p>
+						<img data-src="pictures/lightlevel.png">
+						<p style="font-size:10px">(source: <a href="https://minecraft.gamepedia.com/Light">https://minecraft.gamepedia.com/Light</a>)</p>
+					</section>
+
+					<section>
+						<h2>Light level propagation</h2>
+						<p>Resulting in a lower light level in shielded areas</p>
+						<img data-src="pictures/llp.png">
+					</section>
+
+					<section>
+						<h2>Ambient occlusion</h2>
+						<ul>
+							<li class="fragment">Our proposal didn't include any form of ambient occlusion</li>
+							<ul>
+								<li class="fragment">The resulting images looked flat and there was no sense of depth to them</li>
+							</ul>
+							<li class="fragment">So we decided to add in ambient occlusion</li>
+							<ul>
+								<li class="fragment">Our cube world made it extremly easy to implement ambient occlusion in world space</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Ambient occlusion</h2>
+						<p>For each vertex of an given cube one needs to check the neighbouring cubes:</p>
+						<img data-src="pictures/aovoxel2.png">
+						<p style="font-size:10px">(source: <a href="https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/">https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/</a>)</p>
+					</section>
+
+					<section>
+						<h2>Ambient occlusion</h2>
+						<p>Passing the ambient occlusion value from the vertex to the fragment shader handles the needed interpolation</p>
+						<img data-src="pictures/aotestrun.png">
+					</section>
+
+					<section>
+						<h2>Ambient occlusion</h2>
+						<img data-src="pictures/aoontopoftree.png">
+					</section>
+
+					<section>
+						<h2>Physics</h2>
+						<ul>
+							<li class="fragment">Used PhysX</li>
+							<li class="fragment">Character controller</li>
+							<li class="fragment">cubes are represented as PxRigidStatic objects</li>
+							<li class="fragment">colision detection</li>
+						</ul>
+					</section>
+					<section>
+						<h2>Character controller</h2>
+						<img data-src="pictures/capsule1.png">
+					</section>
+					<section>
+						<h2>Physics</h2>
+						<img data-src="pictures/calculate_new_cubes.png">
+						<ul>
+						<li class="fragment">cubes are generated around the player</li>
+						<li class="fragment">when he moves out, new cubes will be created and old will be deleted</li>
+						<li class="fragment">generation indepented of the chunks</li>
+						</ul>
+					</section>
+				</section>
+
+				<section>
+					<section>
+						<h1>Milestone 3</h1>				
+					</section>
+					
+					<section>
+						<h2>Culling</h2>
+						<ul>
+							<li class="fragment">High geometric complexity:</li>
+							<ul>
+								<li class="fragment">16x16 loaded chunks stacks</li>
+								<li class="fragment">2-5 chunks each</li>
+								<li class="fragment">32x32x32 cubes inside one chunk</li>
+								<li class="fragment">12 triangles for each cube</li>
+								<li class="fragment"><t style="color:red">~301.989.888</t> triangles total</li>
+							</ul>
+							<li class="fragment">Result:</li>
+							<ul>
+								<li class="fragment">Bad performance</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Culling</h2>
+						<ul>
+							<li class="fragment">Therefore several techniques are implemented:</li>
+							<ul>
+								<li class="fragment">Back-face culling</li>
+								<li class="fragment">Cube culling</li>
+								<li class="fragment">Face culling</li>
+								<li class="fragment">Greedy Meshing</li>
+								<li class="fragment">Frustum culling</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Cube culling</h2>
+						<p>In the first step we are culling all non visible cubes, before generating gpu data</p>
+						<img data-src="pictures/cullingyx.png">
+					</section>
+
+					<section>
+						<h2>Cube culling</h2>
+						<p>The result: Only the top layer of blocks are still rendered</p>
+						<img data-src="pictures/benathwithculling.png">
+					</section>
+
+					<section>
+						<h2>Face culling</h2>
+						<p>With culling also all non visible faces of the top layer, we can lower the triangle count even further</p>
+						<img data-src="pictures/faceculling.png">
+					</section>
+
+					<section>
+						<h2>Greedy Meshing</h2>
+						<ul>
+							<li class="fragment">Before sending this set of faces to the gpu, there is one simple option left:</li>
+							<ul>
+								<li class="fragment">Merging adjacent faces with the same attributes</li>
+								<ul>
+									<li class="fragment">(Like light level, ambient occlusion value, ...)</li>
+								</ul>
+								<li class="fragment">This is done by looping through an ordered set of the given faces, and trying to merge the lowest face onto the already merged faces</li>
+								<ul>
+									<li class="fragment">Our implementation is doing this in two steps:</li>
+									<ul>
+										<li class="fragment">Merging the input into the x direction</li>
+										<li class="fragment">Merging the result from step one into the z direction</li>
+									</ul>
+								</ul>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Without Greedy Meshing</h2>
+						<img data-src="pictures/withoutgm.png">
+					</section>
+
+					<section>
+						<h2>With Greedy Meshing</h2>
+						<img data-src="pictures/withgm.png">
+					</section>
+
+					<section>
+						<h2>Frustum culling</h2>
+						<p>A chunk gets only submitted for rendering, if it lies (partially) inside the view frustum</p>
+						<video data-autoplay src="video/frustumculling.mp4"></video>
+					</section>
+
+					<section>
+						<h2>Placing / Removing cubes</h2>
+						<ul>
+							<li class="fragment">Left click removing cubes</li>	
+							<li class="fragment">Right click adding new cubes</li>	
+							<li class="fragment">Raycasting from origin to view direction</li>
+						</ul>
+					</section>
+					<section data-transition="none">
+						<h2>Raycast adding cube</h2>
+						<img data-src="pictures/raycasting1.png">
+					</section>
+					<section data-transition="none">
+						<h2>Raycast adding cube</h2>
+						<img data-src="pictures/raycasting2.png">
+					</section>
+					<section data-transition="none">
+						<h2>Raycast adding cube</h2>
+						<img data-src="pictures/raycasting3.png">
+					</section>
+
+					<section>
+						<h2> Falling Cube</h2>
+						<ul>
+							<li class="fragment">Just added after removing a cube</li>
+							<li class="fragment">determine all sand cubes above hit cube</li>
+							<li class="fragment">determine landing position</li>
+							<li class="fragment">replace static cube with dynamic</li>
+							<li class="fragment">lock x, z transaction and rotation axes</li>
+							<li class="fragment">replace dynamic cube with static</li>
+						</ul>
+					</section>
+					<section data-transition="none">
+						<h2>Falling Cube</h2>
+						<img data-src="pictures/falling1.png">
+					</section>
+					<section data-transition="none">
+						<h2>Falling Cube</h2>
+						<img data-src="pictures/falling2.png">
+					</section>
+					<section data-transition="none">
+						<h2>Falling Cube</h2>
+						<img data-src="pictures/falling3.png">
+					</section>
+					<section data-transition="none">
+						<h2>Falling Cube</h2>
+						<img data-src="pictures/falling4.png">
+					</section>
+					<section data-transition="none">
+						<h2>Falling Cube</h2>
+						<img data-src="pictures/falling5.png">
+					</section>
+					<section>
+						<video data-autoplay src="video/fallensand.mp4"></video>
+					</section>
+					
+					<section>
+						<h2>3D objects</h2>
+						<p>Can't reuse the compact cube vertex struct</p>
+						<pre><code data-trim>
+						struct Vertex {
+	glm::vec3 position;
+	glm::vec2 textureCoordinate;
+	unsigned char normalID;
+	unsigned char textureID;
+	unsigned char ambientOcclusionValue;
+	unsigned char lightLevel;
+}
+							</code></pre>
+					</section>
+
+					<section>
+						<h2>3D objects</h2>
+						<p>Updated vertex struct used for 3D object files only</p>
+						<pre><code data-trim>
+						struct BigVertex {
+	glm::vec3 position;
+	glm::vec2 textureCoordinate;
+	glm::vec3 normal;
+	unsigned char textureID;
+}
+							</code></pre>
+					</section>
+
+					<section>
+						<h2>3D objects</h2>
+						<ul>
+							<li class="fragment">Using two vertex layouts lead to new:</li>
+							<ul>
+								<li class="fragment">Shaders</li>
+								<li class="fragment">Buffer and DeviceMemory</li>
+								<li class="fragment">Descriptor pool</li>
+								<li class="fragment">Descriptor set layout</li>
+								<li class="fragment">Descriptor sets</li>
+								<li class="fragment">Pipeline</li>
+							</ul>
+							<li class="fragment">Luckily this was fairly easy, because the Vulkan wrapper hat functionality for all of this</li>
+						</ul>
+					</section>
+
+					<section>
+						<h2>3D objects</h2>
+						<p>Modelled using Blender</p>
+						<img data-src="pictures/blender.png">
+					</section>
+
+					<section>
+						<h2>Sunflowers</h2>
+						<p>There are three different types of flowers, planted according to the biom data</p>
+						<img data-src="pictures/sunflower.png">
+					</section>
+
+					<section>
+						<h2>Lotus</h2>
+						<p>Each flower has a random position (inside the cube it's planted) and rotation</p>
+						<img data-src="pictures/lotus.png">
+					</section>
+
+					<section>
+						<h2>Succulent</h2>
+						<p>They get submitted after the cubes, allowing the depth test to fail early, if the flower wouldn't be visible</p>
+						<img data-src="pictures/succulent.png">
+					</section>
+					
+
+
+				</section>
+
+				<section>
+					<section>
+						<h1>Milestone 4</h1>				
+					</section>
+					<section>
+						<h2>Waving grass</h2>
+						<img data-src="pictures/wavinggrasstexture.png">
+					</section>
+					<section>
+						<h2>Waving grass</h2>
+						<ul>
+							<li>enabled blending for textures</li>
+							<li>waving starts from half texture height</li>
+						</ul>
+					</section>
+					<section>
+						<h2>Waving grass</h2>
+						<pre><code data-trim>
+						srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+colorBlendOp = VK_BLEND_OP_ADD;
+alphaBlendOp = VK_BLEND_OP_ADD;
+						</code></pre>
+					</section>
+					
+					<section>
+						<h2>Waving grass</h2>
+						<video data-autoplay src="video/waving_grass.mkv"></video>
+					</section>
+					<section>
+						<h2>Screenshot</h2>
+						<ul>
+							<li>screenshots can be taken by pressing . </li>
+							<li>screenshot will get an unique name</li>
+							<li>File format is .ppm</li>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+						<p>Using a different noise function called Worley noise</p>
+						<img data-src="pictures/worley.png">
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+							<p>But this time as 3D Texture:</p>
+							<img data-src="pictures/3dnoise.png">
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+						<ul>
+							<li class="fragment">Building a cloud 3D texture from the worley noise:</li>
+							<ul>
+								<li class="fragment">Sampling with multiple frequencies</li>
+								<ul>
+									<li class="fragment">For example: 2, 4, 8, 16 times a base frequency</li>
+								</ul>
+								<li class="fragment">Inverting the results, using a weight</li>
+								<ul>
+									<li class="fragment">inverted = 1.0f - weight * noise</li>
+								</ul>
+								<li class="fragment">Clamping back to the range of [0.0f, 1.0f]</li>
+								<li class="fragment">Blending all frequencies into one noise texture</li>
+								<li class="fragment">Final range remap, making clouds less dense</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+						<p>Resulting 3D cloud texture</p>
+						<img data-src="pictures/cloudtexture1.png">
+						<img data-src="pictures/cloudtexture2.png">
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+						<ul>
+							<li class="fragment">Last Step is simple ray marching:</li>
+							<ul>
+								<li class="fragment">Here we use the cloud texture to sample the density at any given point</li>
+								<li class="fragment">Along one camera ray 64 samples get evaluated</li>
+								<li class="fragment">For each sample another raymarching step towards the sun gets calculated</li>
+								<ul>
+									<li class="fragment">Only using 6 samples here</li>
+								</ul>
+								<li class="fragment">In the end everything along one camera ray gets accumulated</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Volumetric clouds</h2>
+						<p>The sampled position is offset by the time, creating the movement of the clouds</p>
+						<video data-autoplay src="video/volumetricclouds.mp4"></video>
+					</section>
+
+					<section>
+						<h2>Day night cycle</h2>
+						<ul>
+							<li class="fragment">One day in game is 20 minutes long</li>
+							<ul>
+								<li class="fragment">The sun rotation is determined by the time passed since last frame</li>
+								<li class="fragment">The algorithm for the atmospheric scattering is reused from our gpuc project</li>
+								<ul>
+									<li class="fragment">(an photomode using path tracing for this game)</li>
+								</ul>
+								<li class="fragment">Besides the atmospheric scattering, the shading for cubes and obj's got updated:</li>
+								<ul>
+									<li class="fragment">This means they are using the dynamic sun position too</li>
+									<li class="fragment">Furthermore they get brighter and darker (but not too dark) depending on the in game time</li>
+								</ul>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Day night cycle</h2>
+						<video data-autoplay src="video/daynight.mp4"></video>
+					</section>
+				</section>
+
+				<section>
+					<section>
+						<h1>What helped us a lot</h1>				
+					</section>
+
+					<section>
+						<h2>The VulkanWrapper</h2>
+						<ul>
+							<li class="fragment">Our wrapper around the vulkan api was probably the most helpful thing during development</li>
+							<ul>
+								<li class="fragment">Because it removed the hassle of filling out the create/info structs</li>
+								<li class="fragment">Now we were able to test out new things in no time, since needed objects were only a few function calls away</li>
+							</ul>
+							<li class="fragment">The upfront cost pays back really quickly, but brings many benefits later</li>
+						</ul>
+					</section>
+					
+					<section>
+						<h2>Storing data to the disk</h2>
+						<ul>
+							<li class="fragment">Storing game data like the generated chunk data (or the worley noise) speed up the loading process up in a significant way</li>
+							<ul>
+								<li class="fragment">Ofcourse this has an positiv influence to the gameplay, </li>
+								<li class="fragment">but it also helped us out to iterate faster to find suitable game settings</li>
+								<ul>
+									<li class="fragment">(extremely the case for the worley noise)</li>
+								</ul>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Our debug functionality</h2>
+						<ul>
+							<li class="fragment">Things like the implemented frustum button or an normal shader</li>
+							<ul>
+								<li class="fragment">Eventhough things like this seems simple they came in handy at later points in time</li>
+							</ul>
+						</ul>
+						<p class="fragment"><img data-src="pictures/normalsonly.png"></p>
+					</section>
+
+					<section>
+						<h2>RenderDoc and Vulkan validation layers</h2>
+						<ul>
+							<li class="fragment">Since it was our first time using Vulkan we had some "beginner" bugs</li>
+							<ul>
+								<li class="fragment">But reading the validation layers paired with checking the named locations inside Renderdoc finding those bugs was made extremly easy</li>
+							</ul>
+						</ul>
+					</section>
+				</section>
+				
+				<section>
+					<section>
+						<h1>What we would do different</h1>				
+					</section>
+					
+					<section>
+						<h2>Change out PhysX</h2>
+						<ul>
+							<li class="fragment">In our proposal we had listed PhysX as our physics engine, since the code snippets seemed simple,</li>
+							<ul>
+								<li class="fragment">but the actual problem wasn't the usage of the sdk itself, but rather the integration of it into our project</li>
+								<li class="fragment">Therefore we would switch to a different physics engine in the future</li>
+							</ul>
+						</ul>
+					</section>
+
+					<section>
+						<h2>Ordering of some Tasks</h2>
+						<ul>
+							<li class="fragment">Some tasks like for example the culling task, came out to be really important even from the beginning</li>
+							<ul>
+								<li class="fragment">This was the reason why we needed to some leap aheads, allowing us to have usable performance during all times of development</li>
+								<li class="fragment">Needles to say, given a similar oppurtunity in the future, we definitly would change up the ordering of the tasks.</li>
+							</ul>
+						</ul>
+					</section>
+				</section>
+
+				<section>
+					<h2>Thanks for your attention!</h2>
+				</section>
+
+				<section>
+					<section>
+						<h2>GUI</h2>
+						<img data-src="pictures/GUI1.png">
+					</section>
+					<section>
+						<h2>GUI</h2>
+						<img data-src="pictures/GUI2.png">
+					</section>
+					<section>
+						<h2>GUI</h2>
+						<img data-src="pictures/GUI3.png">
+					</section>
+				</section>
+
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+
+			// Full list of configuration options available at:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+			
+				width: 960,
+				height: 700,
+			
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+				// Optional reveal.js plugins
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true },
+					{ src: 'plugin/notes/notes.js', async: true }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
